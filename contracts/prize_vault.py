@@ -32,10 +32,50 @@ ST_CLOSED = "CLOSED"
 MAX_PAGE_CHARS = 14000
 MAX_EVIDENCE_CHARS = 6000
 
+# plain Exception, the same as GiveawayProof v2 (proven on GenLayer Studio)
+UserErr = Exception
+
+
+# --- GEN transfer to a normal wallet (same method as GiveawayProof v2, which
+#     paid real winners on GenLayer Studio) ---------------------------------
+_Wallet = None
 try:
-    UserErr = gl.vm.UserError
+    @gl.evm.contract_interface
+    class _WalletIface:
+        class View:
+            pass
+
+        class Write:
+            pass
+
+    _Wallet = _WalletIface
 except Exception:
-    UserErr = Exception
+    _Wallet = None
+
+
+def _send(to_hex: str, amount: int) -> None:
+    if amount <= 0:
+        return
+    to = Address(to_hex)
+    v = u256(amount)
+    if _Wallet is not None:
+        try:
+            _Wallet(to).emit_transfer(value=v)
+            return
+        except Exception:
+            pass
+    fn = getattr(gl, "get_contract_at", None)
+    if fn is not None:
+        try:
+            fn(to).emit_transfer(value=v)
+            return
+        except Exception:
+            pass
+    ca = getattr(gl, "ContractAt", None)
+    if ca is not None:
+        ca(to).emit_transfer(value=v)
+        return
+    raise Exception("GEN transfer is not available on this network")
 
 
 def _now() -> int:
@@ -120,10 +160,9 @@ class PrizeVault(gl.Contract):
         return {"unit": 86400, "grace": 14 * 86400, "retry_gap": 6 * 3600, "max_reg": 120, "max_judge": 90, "max_claim": 60}
 
     def _load(self, vid: int) -> dict:
-        try:
-            return json.loads(self.vaults[str(vid)])
-        except KeyError:
+        if (str(vid)) not in self.vaults:
             raise UserErr("Vault not found")
+        return json.loads(self.vaults[str(vid)])
 
     def _save(self, v: dict) -> None:
         self.vaults[str(v["id"])] = json.dumps(v)
@@ -132,21 +171,15 @@ class PrizeVault(gl.Contract):
         return str(vid) + ":" + who.lower()
 
     def _entry(self, vid: int, who: str) -> dict:
-        try:
-            return json.loads(self.entries[self._ekey(vid, who)])
-        except KeyError:
+        if (self._ekey(vid, who)) not in self.entries:
             return {}
+        return json.loads(self.entries[self._ekey(vid, who)])
 
     def _put_entry(self, vid: int, who: str, e: dict) -> None:
         self.entries[self._ekey(vid, who)] = json.dumps(e)
 
     def _pay(self, to: str, amount: int) -> None:
-        if amount <= 0:
-            return
-        try:
-            gl.get_contract_at(Address(to)).emit_transfer(value=u256(amount))
-        except AttributeError:
-            gl.ContractAt(Address(to)).emit_transfer(value=u256(amount))
+        _send(to, amount)
 
     def _advance(self, v: dict, now: int) -> None:
         if v["state"] == ST_OPEN and now >= v["reg_end"]:
@@ -246,11 +279,8 @@ class PrizeVault(gl.Contract):
         _host(project_url)
         nu = _norm_url(project_url)
         key = str(vault_id) + ":" + nu
-        try:
-            self.url_taken[key]
+        if key in self.url_taken:
             raise UserErr("This project URL is already registered")
-        except KeyError:
-            pass
         self.url_taken[key] = who.lower()
         self._put_entry(vault_id, who, {"project": pn, "url": project_url.strip(), "won": -1,
                                         "verified": False, "paid": False})
@@ -482,10 +512,9 @@ class PrizeVault(gl.Contract):
     # ------------------------------------------------------------------- views
     @gl.public.view
     def get_vault(self, vault_id: int) -> str:
-        try:
-            return self.vaults[str(vault_id)]
-        except KeyError:
+        if (str(vault_id)) not in self.vaults:
             return "{}"
+        return self.vaults[str(vault_id)]
 
     @gl.public.view
     def get_entry(self, vault_id: int, wallet: str) -> str:
