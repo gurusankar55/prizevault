@@ -2,8 +2,8 @@
 
 ## Links
 - GitHub: https://github.com/gurusankar55/prizevault
-- Demo contract (Studio): 0x______________________
-- Live contract (Studio): 0x______________________
+- Demo contract (Studio): 0x33b9d9Ef0816cf7508Be0cB3d2DcC52744889689
+- Live contract (Studio): 0x0E1FfE182d717f6a2d07FD461F6fa2596C10a991
 - Evidence screenshots: https://github.com/gurusankar55/prizevault/tree/main/evidence
 
 ## Title
